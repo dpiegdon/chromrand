@@ -7,36 +7,16 @@ import random
 import skimage.io
 
 
-def palette(image):
-    """ return a set of used colors (r,g,b) in @image """
-    width, height, depth = image.shape
-    strip = image.reshape((width*height, depth))
-    return {(c[0], c[1], c[2]) for c in numpy.unique(strip, axis=0)}
-
-
-def randomize_chroma(color, jitter=10):
-    """ given a @color return another color with similar brightness but
-    different chroma, with an allowed @jitter in brightness """
-    brightness = sum(color)
+def randomize_chroma(brightness, jitter=15):
+    """ given a @brightness return a random color with similar brightness
+    up to a certain @jitter """
     lower_brightness = max(brightness - jitter//2, 3*0)
     upper_brightness = min(brightness + jitter//2, 3*255)
     target_brightness = random.randrange(lower_brightness, upper_brightness+1)
 
-    c = [random.random() for _ in range(3)]
-    d = tuple((int(x/sum(c)*target_brightness) for x in c))
-    return d
-
-
-def randomize_image_chroma(image):
-    """ return copy of @image with chroma-randomized palette """
-    colormap = {c: randomize_chroma(c) for c in palette(image)}
-
-    copy = numpy.copy(image)
-    width, height, depth = copy.shape
-    strip = copy.reshape((width*height, depth))
-    for pixel in strip:
-        pixel[0:3] = colormap[tuple(pixel[0:3])]
-    return copy
+    c = numpy.random.rand(3)
+    c = c / sum(c) * target_brightness
+    return c.astype(int)
 
 
 if __name__ == "__main__":
@@ -51,10 +31,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     image = skimage.io.imread(args.INPUT)
+    width, height, depth = image.shape
+
+    # we only care about r/g/b color, so use a one-dimensional view into image
+    strip = image.reshape((width*height, depth))[:, 0:3]
+    palette = numpy.unique(strip, axis=0)
+
+    # split image into regions of same color and remember their brightness
+    brightness_regions = [(numpy.all(strip == c, axis=1), sum(c))
+                          for c in palette]
+
     for i in range(args.count):
         outname = f"{args.output}{i}.png"
         if not os.path.exists(outname):
             print(outname)
-            skimage.io.imsave(outname, randomize_image_chroma(image))
+            for region, brightness in brightness_regions:
+                strip[region] = randomize_chroma(brightness)
+            skimage.io.imsave(outname, image)
         else:
             print(f"skipping existing {outname}")
